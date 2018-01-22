@@ -50,10 +50,10 @@ class network_DA(nn.Module)
         wd_loss= self.critic(x1,x2)
         return cls,wd_loss
 
-     def load_network(self,network,network_name,epoch_label,save_dir):
-	 save_filename = '%s_net_%s.pth' % (epoch_label,network_name)
-	 save_path = os.join.join(save_dir,save_filename)
-	 network.load_state_dict(torch.load(save_path))
+     def load_network(self,network,network_name='All',epoch_label,save_dir):
+	 		save_filename = '%s_net_%s.pth' % (epoch_label,network_name)
+	 		save_path = os.join.join(save_dir,save_filename)
+	 		network.load_state_dict(torch.load(save_path))
  
 def Network_DA(**kwargs):
     model = network_DA(**kwargs)

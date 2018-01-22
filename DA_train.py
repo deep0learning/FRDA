@@ -31,11 +31,12 @@ parser.add_argument('--epochs', default=100, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
-parser.add_argument('-b', '--batch-size', default=128, type=int,
+parser.add_argument('-b', '--batch-size', default=64, type=int,
                     metavar='N', help='mini-batch size (default: 128)')
-parser.add_argument('--lr_1', '--learning-rate', default=0.01, type=float,
+
+parser.add_argument('--lr_1', '--learning-rate', default=1e-4, type=float,
                     metavar='LR', help='domain critic learning rate')
-parser.add_argument('--lr_2', '--learning-rate', default=0.01, type=float,
+parser.add_argument('--lr_2', '--learning-rate', default=1e-4, type=float,
                     metavar='LR', help='cls and feature learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                     help='momentum')
@@ -49,9 +50,9 @@ parser.add_argument('--FExtractor', default='LightCNN-9', type=str, metavar='Mod
 
 parser.add_argument('--critic', default='wasserstein', type=str, metavar='Model',
                     help='model type: cross-entropy or wasserstein')
-parser.add_argument('--critic_steps', default='', type=int, metavar='training steps',
+parser.add_argument('--critic_steps', default=5, type=int, metavar='training steps',
                     help='training steps :steps for training critic network ')
-parser.add_argument('--gamma', default='', type=float, metavar='coefficient',
+parser.add_argument('--gamma', default=10.0, type=float, metavar='coefficient',
                     help='balancing coefficients :balance wasserstein distance and grad loss ')
 
 parser.add_argument('--classifier', default='softmax', type=str, metavar='Model',
@@ -94,6 +95,8 @@ def main():
     if args.cuda:
         #parallel model
         model = torch.nn.DataParallel(model,device_ids=[2,3]).cuda()
+        model.cuda()
+        cudnn.benchmark = True
     print(model)
 
 
@@ -137,6 +140,8 @@ def main():
 
 def train(train_loader, model, criterion, optimizer,critic_optim,cls_optim, epoch):
     
+    adjust_learning_rate(optimizer, epoch)
+
     end = time.time()
     # each time read a batch containing source sample and target samples
     for i, (input, clslabel,domain_label) in enumerate(train_loader):
@@ -160,18 +165,18 @@ def train(train_loader, model, criterion, optimizer,critic_optim,cls_optim, epoc
 	src,src_label,target,target_label = Data_separate(f_out,clslabel_var,domain_label_var)
 
 
-        '''
-        train domain critic optimally with wassertein losses or entropy loss
-        '''
-        #train domain critic to optimally and compute losses when optimally
+    '''
+    train domain critic optimally with wassertein losses or entropy loss
+    '''
+    #train domain critic to optimally and compute losses when optimally
 	critic_dict={'steps':args.step,'gamma':args.gamma}
-        critic_loss = critic_model_train(model.critic,src,target,critic_optim,critic_dict)
+    critic_loss = critic_model_train(model.critic,src,target,critic_optim,critic_dict)
 	
 	#classifier loss from source sample features
 	src_pred = model.classifier(src,args.num_classes)
-        cls_loss =  nn.CrossEntropyLoss(src_pred,src_label)
+    cls_loss =  nn.CrossEntropyLoss(src_pred,src_label)
 	cls_optim.zero_grad()
-        cls_loss.backward()
+    cls_loss.backward()
 	cls_optim.step()
 
 	cls_loss,wd_loss = model(src,srclabel,target)
@@ -200,8 +205,32 @@ def save_checkpoint(state, filename):
 '''
 adjust lerning rate for faeture extractor
 '''
-def adjust_learning_rate(optimizer, epoch):
-	pass
-	
+def adjust_learning_rate(optimizer,critic_optim,cls_optim,epoch):
+	scale = 0.457305051927326
+    step  = 10
+    lr = args.lr * (scale ** (epoch // step))
+    print('lr: {}'.format(lr))
+    if (epoch != 0) & (epoch % step == 0):
+        print('Change lr')
+
+        #feature and classifier learning  rate
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = param_group['lr'] * scale
+
+        #critic learning rate
+
+'''
+different domain data separation
+'''            
+def  Data_separate(f_out,clslabel_var,domain_label_var):
+     src_ind = (domain_label_var ==0)
+     target_ind = (domain_label_var ==1)
+
+     src = f_out[src_ind]
+     src_label = clslabel_var[src_ind]
+
+     target = f_out[target_ind]
+     target_label = clslabel_var[target_ind]
+
 if __name__ == '__main__':
     main()
